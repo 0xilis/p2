@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+a {
+    text-decoration: none;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: black;
+    color: lightgreen;
+  }
+}
+@media (prefers-color-scheme: light) {
+  body {
+    background-color: white;
+    color: black;
+  }
+}
+
+.site-nav {
+    border-radius:10px;
+    display: flex;
+    background: #252a34;
+    color: white;
+    padding: 1em;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: bold;
+}
+.mypfp {
+    border-radius:80px;
+    max-width: 10%;
+    max-width: 10%;
+}
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+.linksbutcooler {
+    background: linear-gradient(to right, royalblue, royalblue 50%, lightblue 50%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 100%;
+    background-position: 100%;
+    transition: background-position 275ms ease;
+    /*
+    The above code is imo really cool, and looks really solid
+    i must confess, however: i looked up how to do it, and the tut is from here https://css-tricks.com/4-ways-to-animate-the-color-of-a-text-link-on-hover/#:~:text=To%20change%20the%20link%20fill%20color%2C%20set%20the,element%20to%20complete%20the%20text%20effect%20on%20hover%3A
+    */
+    color: lightblue;
+    text-align: right;
+}
+.linksbutcooler:hover {
+    color: royalblue;
+    background-position: 0 100%;
+}
+.site-nav-link {
+    color: white;
+}
+</style>
+</head>
+<body>
+    <nav class="site-nav"><a href="https://0xilis.github.io/blog" class="linksbutcooler">0xilis's Blog</a><a class="linksbutcooler" href="https://github.com/0xilis">‎ ‎ GitHub</a></a></nav>
+    &nbsp;
+    <h1 id="pastcuts">Pastcuts</h1>
+<h3 id="creating-pastcuts-1-0">Creating Pastcuts 1.0</h3>
+<p>So we need to figure out what we need to hook beforehand. Back when shortcuts were shared as unsigned .shortcut files, I remember you could pull a shortcut file (which is just a plist) and modify it to have a lower WFWorkflowMinimumClientVersion, and boom import. Even if importing has been disabled, those unsigned shortcut files are still in use behind the scenes when importing shortcuts from iCloud in iOS 13/14 (you can even call the icloud API to receive the unsigned file if you want, ex links like these <code>https://www.icloud.com/shortcuts/8d4e206d568d4aadb624b2a6191a3771</code> have this API <code>https://www.icloud.com/shortcuts/api/records/8d4e206d568d4aadb624b2a6191a3771</code> in which contain a link to the signed shortcut for iOS 15+ and unsigned for iOS 14-), so that value must be in use somewhere. Shortcuts on iOS 13+ differs greatly behind the scenes from iOS 12-, with a lot of it being in iOS itself rather than the app - more specifically, ContentKit.framework, ActionKit.framework, and (the most important) WorkflowKit.framework. First let&#39;s understand what we need to hook. Thankfully shortcuts has a built-in action that makes this easy for us: View Content Graph of (x). Make a shortcut to get all shortcuts, choose list action, then view content graph. Run and choose a shortcut, and View Content graph should appear. Tap on the shortcut&#39;s name, then Shortcut. We can see 5 items - WFWorkflowReference, Shortcut, WFImage, WFWorkflowRecord, and NSString. We&#39;re going to modify WFWorkflowRecord. Let&#39;s take a look at the header - <a class="linksbutcooler" href="https://headers.cynder.me/index.php?sdk=ios/13.7&amp;fw=/PrivateFrameworks/WorkflowKit.framework&amp;file=%2FHeaders%2FWFWorkflowRecord.h">https://headers.cynder.me/index.php?sdk=ios/13.7&amp;fw=/PrivateFrameworks/WorkflowKit.framework&amp;file=%2FHeaders%2FWFWorkflowRecord.h</a>. Oooo, NSString *minimumClientVersion - that sounds useful! Just hook minimumClientVersion in WFWorkflowRecord, and make it return NSString of 1. Boom - You just created Pastcuts 1.0!</p>
+<h3 id="pastcuts-1-1-2-">Pastcuts 1.1.2+</h3>
+<p>Okay, so, what&#39;s wrong here? Well, in 1.2 I wanted Pastcuts to convert shortcut actions when importing. I realized that my logic was bad. Why? Well, we&#39;re hooking minimumClientVersion in EVERY shortcut loaded. This might be bad for performance / battery, and while we&#39;re not doing anything that can go wrong that much, once we get to hooking actions, if we make one mistake, not just that shortcut gets affected but EVERY shortcut gets affected, so it&#39;s pretty dangerous as well. So, let&#39;s just switch to hooking (also in WorkflowKit) WFSharedShortcut&#39;s workflowRecord instead. Let&#39;s do id rettype = %orig;. Then, [rettype setMinimumClientVersion:@&quot;1&quot;]; to make minimumClientVersion 1 in it. Then just return rettype, and boom, now we only hook when a shortcut is imported, making us MUCH more optimized! I was planning on waiting for Pastcuts 1.2, but I decided this optimization is enough to deserve a quick 1.1.2 release.</p>
+<pre><code class="lang-objc">%hook <span class="hljs-type">WFSharedShortcut</span>
+-(id)workflowRecord {
+  id ret<span class="hljs-keyword">type</span> = %orig;
+  [ret<span class="hljs-keyword">type</span> setMinimumClientVersion:@"1"];
+  return ret<span class="hljs-keyword">type</span>;
+}
+%end
+</code></pre>
+<h3 id="pastcuts-1-2-starting-to-get-good-we-re-actually-converting-actions-">Pastcuts 1.2/1.3 (starting to get good - we&#39;re actually converting actions)!</h3>
+<p>Okay, so we can import all Shortcuts imported now. I missed that gallery shortcuts won't be under WFSharedShortcut, so we should also do the same hook for WFGalleryShortcut's workflowRecord as well. Now, even though we can import any action, iOS 13/14 doesn't have every action iOS 15 does, does it? Let's fix that.</p>
+<p>So first off I want to thank u/gluebyte for documenting some of the backwards (in)compatibility of iOS 15. See the post here <a class="linksbutcooler" href="https://www.reddit.com/r/shortcuts/comments/opak23/backward_incompatibility_of_ios_15_shortcuts/">https://www.reddit.com/r/shortcuts/comments/opak23/backward_incompatibility_of_ios_15_shortcuts/</a>. Let's start by converting the stop action back to the exit action.</p>
+<p>We need to get the actions, obv. NSArray *origShortcutActions = (NSArray *)[rettype actions];. I also create a mutable copy of the actions as newMutableShortcutActions. Then I proceed to have a for loop to loop through all the actions in origShortcutActions. Actions codewise are very similar to Shortcut's unsigned plist format, so if you're already aware of it this should be fairly easy to understand.</p>
+<p>WFWorkflowActionIdentifier is a string representing the action'd id. To check if the action is a stop action, we just check if the action in the loop's WFWorkflowActionIdentifier is equal to string is.workflow.actions.output.</p>
+<p>If so, I create a mutable copy of the action to modify it. Then I change the WFWorkflowActionIdentifier to equal is.workflow.actions.exit. I then proceed to attempt to get its output and correspond to is.workflow.actions.exit's way.</p>
+<p>If you're unaware of how an action is structured, I <strong>really</strong> recommend creating a shortcut with the action, using the Get My Shortcuts action, Choose from List, and then get file of type com.apple.plist to view the shortcuts unsigned plist. It should give you a good look at how the action works without even needing to look at rev'ing WorkflowKit/ActionKit.</p>
+<p>(Note: That being said, when needed to, I highly recommend learning some basic reverse engineering. I made Pastcuts before I knew anything and just tried a bunch of classes hoping to eventually get it right. Don't do this. That's a ton more effort and rev'ing gives you a much better chance of ensuring what you're hooking is good to hook. I have since and it's been very helpful.)</p>
+<p>Here's an example of this:</p>
+<pre><code class="lang-objc">%hook WFSharedShortcut
+-(id)workflowRecord {
+  id rettype = %orig;
+  [rettype <span class="hljs-string">setMinimumClientVersion:</span>@<span class="hljs-string">"1"</span>];
+  NSArray *origShortcutActions = (NSArray *)[rettype actions];
+  NSMutableArray *newMutableShortcutActions = [origShortcutActions mutableCopy];
+  <span class="hljs-keyword">int</span> shortcutActionsObjectIndex = <span class="hljs-number">0</span>;
+  <span class="hljs-keyword">for</span> (id shortcutActionsObject <span class="hljs-keyword">in</span> origShortcutActions) {
+    <span class="hljs-comment">//this safety check is only needed if you are unaware of in actions it potentially contains more than NSDictionaries.</span>
+    <span class="hljs-keyword">if</span> ([shortcutActionsObject <span class="hljs-string">isKindOfClass:</span>[NSDictionary <span class="hljs-class"><span class="hljs-keyword">class</span>]]){</span>
+      <span class="hljs-keyword">if</span> ([[shortcutActionsObject <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"WFWorkflowActionIdentifier"</span>] <span class="hljs-string">isEqualToString:</span>@<span class="hljs-string">"is.workflow.actions.output"</span>]) {
+        NSMutableDictionary *mutableShortcutActionsObject = [shortcutActionsObject mutableCopy];
+
+        [mutableShortcutActionsObject <span class="hljs-string">setValue:</span>@<span class="hljs-string">"is.workflow.actions.exit"</span> <span class="hljs-string">forKey:</span>@<span class="hljs-string">"WFWorkflowActionIdentifier"</span>];
+        <span class="hljs-keyword">if</span> ([[[[[mutableShortcutActionsObject <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"WFWorkflowActionParameters"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"WFOutput"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"Value"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"attachmentsByRange"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"{0, 1}"</span>]) {
+    <span class="hljs-comment">//in iOS 15, if an Exit action has output it's converted into the Output action, so we convert it back</span>
+
+          NSDictionary *actionParametersWFResult = [[NSDictionary alloc] <span class="hljs-string">initWithObjectsAndKeys:</span>@<span class="hljs-string">"placeholder"</span>, @<span class="hljs-string">"Value"</span>, @<span class="hljs-string">"WFTextTokenAttachment"</span>, @<span class="hljs-string">"WFSerializationType"</span>, nil];
+          NSMutableDictionary *mutableActionParametersWFResult = [actionParametersWFResult mutableCopy];
+          [mutableActionParametersWFResult <span class="hljs-string">setValue:</span>[[[[[mutableShortcutActionsObject <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"WFWorkflowActionParameters"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"WFOutput"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"Value"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"attachmentsByRange"</span>] <span class="hljs-string">objectForKey:</span>@<span class="hljs-string">"{0, 1}"</span>] <span class="hljs-string">forKey:</span>@<span class="hljs-string">"Value"</span>];
+          NSDictionary *actionParameters = [[NSDictionary alloc] <span class="hljs-string">initWithObjectsAndKeys:</span>@<span class="hljs-string">"placeholder"</span>, @<span class="hljs-string">"WFResult"</span>, nil];
+          NSMutableDictionary *mutableActionParameters = [actionParameters mutableCopy];
+          [mutableActionParameters <span class="hljs-string">setValue:</span>mutableActionParametersWFResult <span class="hljs-string">forKey:</span>@<span class="hljs-string">"WFResult"</span>];
+          [mutableShortcutActionsObject <span class="hljs-string">setValue:</span>mutableActionParameters <span class="hljs-string">forKey:</span>@<span class="hljs-string">"WFWorkflowActionParameters"</span>];
+        }
+        newMutableShortcutActions[shortcutActionsObjectIndex] = [[NSDictionary alloc] <span class="hljs-string">initWithDictionary:</span>mutableShortcutActionsObject];
+      }
+    }
+  }
+  <span class="hljs-keyword">return</span> rettype;
+}
+%end
+</code></pre>
+<h3 id="pastcuts-the-future-">The (potential) future - iOS 12 support?</h3>
+<p>Remember how I claimed iOS 13 works greatly behind the scenes than iOS 12 Shortcuts? I've finally learned a bit of rev'ing and took a look back at Shortcuts 2.2.2 - and it looks like they may have a lot more in common than I originally thought.</p>
+<p>While in iOS 12 there is no WorkflowKit system framework, Shortcuts 2.2.2 embeds frameworks that later become embedded. ActionKit.framework, ContentKit.framework, WorkflowUI.framework are all embedded. And, most interestingly, WorkflowAppKit is embedded. This isn't a 1:1 copy of WorkflowKit but it's fairly similar. A lot of code seems to e later re-used in WorkflowKit. My best guess is that they knew they couldn't rework the whole app to integrate into the OS, so rather as a stopgap they did some embedded frameworks they planned to integrate later when fully finished. iOS 12 Shortcuts is not fully made of these frameworks however, the binary <strong>does</strong> in fact have some actual code implemented, with it all being Swift. I'd honestly say iOS 12 Shortcuts has more Swift than iOS 13.</p>
+<p>WorkflowAppKit, from what I can see does not handle gallery shortcuts, that's by Shortcuts itself which is all in swift, so adding gallery support isn't so easy. But, for what's going to matter the most, importing, <strong>is</strong> handled by WorkflowAppKit's WFSharedShortcut - hmm, where have we seen this before?</p>
+<p>It's nearly identical to how it is in WorkflowKit in iOS 13. WFWorkflowRecord however, doesn't exist yet - instead WFWorkflow is used. So, we should just be able to hook that and (hopefully) be good.</p>
+<p>That's not saying it'll be as neat as Pastcuts iOS 13/14 for iOS 15 shortcuts - iOS 12 to 13, unlike 14 to 15, does differ a lot in structure, with iOS 12 being more dependent on actions using input passed in from the last action, and iOS 13+ is more dependent on using the passed in magic variable of the action.</p>
+<p>Perhaps, maybe, it could be usual to convert actions that rely on that magic variable structure in iOS 13 to cycle through all params, and place the magic variables in a Get Variable action on top of the action. iOS 13 also features a lot of acitons that you may be able to easily just substitute with a Get Variable action.</p>
+</body>
+</html>

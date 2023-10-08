@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<!-- Yes, the formatting to this is admittedly horrible, but at least the site works...-->
+<head>
+<style>
+a {
+    text-decoration: none;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: black;
+    color: lightgreen;
+  }
+}
+@media (prefers-color-scheme: light) {
+  body {
+    background-color: white;
+    color: black;
+  }
+}
+
+.site-nav {
+    border-radius:10px;
+    display: flex;
+    background: #252a34;
+    color: white;
+    padding: 1em;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: bold;
+}
+.mypfp {
+    border-radius:80px;
+    max-width: 10%;
+    max-width: 10%;
+}
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+.linksbutcooler {
+    background: linear-gradient(to right, royalblue, royalblue 50%, lightblue 50%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 100%;
+    background-position: 100%;
+    transition: background-position 275ms ease;
+    color: lightblue;
+    text-align: right;
+}
+.linksbutcooler:hover {
+    color: royalblue;
+    background-position: 0 100%;
+}
+.site-nav-link {
+    color: white;
+}
+</style>
+</head>
+<body>
+    <nav class="site-nav"><a href="https://0xilis.github.io/blog" class="linksbutcooler">0xilis's Blog</a><a class="linksbutcooler" href="https://github.com/0xilis">‎ ‎ GitHub</a></a></nav>
+    &nbsp;
+    <h1 id="pastcuts">libobjc</h1>
+<h3 id="introduction">Background</h3>
+<p>Whenever using Objective-C, you're using messages. Unlike C++, Objective-C handles runtime. Every method is a message in Objective-C, with objc_msgSend being the "holy grail" of objc runtime. The dylib that handles runtime is libobjc.A.dylib. Any speed gains there will translate into speed gains across the whole OS, meaning that even micro-optimizations may be good. Today, I will go over how I optimized libobjc. I have found many micro-optimizations that can be made to libobjc, that while on their own may be small, together, I believe they may have a decent performance benefit. In this page, I will go over objc_msgSend specifically.</p>
+<h3 id="tagged_pointers">Tagged Pointer instruction save</h3>
+<p>As said earlier, objc_msgSend is the core of the Objective-C runtime. This is the most important function in all of libobjc, hence why it&#39;s already so well optimized; Apple wrote it entirely in arm64 assembly just to ensure the best performance possible. If you want to see how it works, objc4 is open source, plus this resource (admittedly is old from 2017 so some of it is outdated, but I still found it to be incredibly helpful) covers objc_msgSend instruction by instruction: <a class="linksbutcooler" href="https://www.mikeash.com/pyblog/friday-qa-2017-06-30-dissecting-objc_msgsend-on-arm64.html">https://www.mikeash.com/pyblog/friday-qa-2017-06-30-dissecting-objc_msgsend-on-arm64.html</a>. However, what if we were to go <em>even further beyond?</em></p>
+<p>Let&#39;s take a look at how objc_msgSend handles tagged pointers:</p>
+<pre><code class="lang-asm"><span class="hljs-keyword">and</span> x10, x0, <span class="hljs-comment">#0x7</span>
+asr x11, x0, <span class="hljs-comment">#0x37</span>
+cmp x10, <span class="hljs-comment">#0x7</span>
+csel x12, x11, x10, eq
+; too lazy <span class="hljs-keyword">to</span> show <span class="hljs-built_in">rest</span> <span class="hljs-keyword">of</span> da code
+</code></pre>
+<p>Here we run into our first optimization: Notice how there is a and instruction as well as a cmp instruction? Basically, what this code is doing is setting x12 to 111 if the last three bits of x0 is 111, however if not, it sets this to the first 8 bits of x11. However, (and this is something <em>very</em> easy to notice, no idea why Apple didn&#39;t do it) if you know basic arm64 assembly, you probably know that the ands instruction will solve some and/cmp pairs, this being one of them. ands (According to the official Cortex A57 arm64 manual) still only takes 1 exec latency and 2 exec throughput, meaning by doing this optimization:</p>
+<pre><code class="lang-asm">asr x11, x0, <span class="hljs-comment">#0x37</span>
+ands x10, x0, <span class="hljs-comment">#0x7</span>
+csel x12, x11, x10, eq
+; too lazy <span class="hljs-keyword">to</span> show <span class="hljs-built_in">rest</span> <span class="hljs-keyword">of</span> da code
+</code></pre>
+<p>We save on 1 instruction, which should save us 1 to 2 cycles. Again, while this is not much, remember how important of a function objc_msgSend is. Even the smallest optimizations are impactful.</p>
+<h3 id="mov-save">mov save when uncached</h3>
+<p>Now let&#39;s on our next optimization; this is the first one I spotted. Notice how for the pointer to self-&gt;isa, x16 is used everywhere, but immediately after self-&gt;isa is found, self-&gt;isa is also moved to the x15 register as well? This is because if we need to load uncached (calling objc_msgSend_uncached), this inputs x15. However, you&#39;ll soon notice that the very first use of x15... is moving the x16 register into it! What that means is that the x16 register value pre-objc_msgSend_uncached is useless. So, what we can also do is change the entire function to use x15 already for self-&gt;isa, and switch to using a mov x16, x15 when reloading from cache so the value of x16 will be preserved. This saves us one instruction when we need to load uncached!</p>
+</body>
+</html>

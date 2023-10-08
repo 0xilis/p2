@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+a {
+    text-decoration: none;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: black;
+    color: lightgreen;
+  }
+}
+@media (prefers-color-scheme: light) {
+    /*
+    light mode. not used atm but just in case i want to ever add a light 
+mode to my site
+    */
+  body {
+    background-color: white;
+    color: black;
+  }
+}
+
+.site-nav {
+    border-radius:10px;
+    display: flex;
+    background: #252a34;
+    color: white;
+    padding: 1em;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: bold;
+}
+
+.mypfp {
+    border-radius:100px;
+    max-width: 10%;
+    max-width: 10%;
+}
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+.githublink {
+    background: linear-gradient(to right, royalblue, royalblue 50%, 
+lightblue 50%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 100%;
+    background-position: 100%;
+    transition: background-position 275ms ease;
+    color: lightblue;
+    text-align: right;
+}
+.githublink:hover {
+    color: royalblue;
+    background-position: 0 100%;
+}
+    /* i looked up a ton on w3 of how to do stylish buttons, these still don't look great IMO but better than nothing... */
+.button {
+  background-color: #4CAF50;
+  border-radius:20px;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+    <nav class="site-nav">0xilis's Blog<a class="githublink"
+href="https://github.com/0xilis">‎ ‎ GitHub</a></a></nav>
+    &nbsp;
+    <center><img class="mypfp" 
+src="https://avatars.githubusercontent.com/u/109871561?v=4">
+    <h1>0xilis</h1>
+    <p><strong>iOS Programmer.</strong></center></p>
+    <p><center>Hello! Welcome to my site. I mainly program in Objective-C 
+/ C, and have knowledge of JS/Python along with a <i>tiny</i> bit of
+knowledge of some other languages Java and arm64 assembly. I am 
+currently learning Java. Check out some of my projects below:</center></p>
+
+    &nbsp;
+    &nbsp;
+    &nbsp;
+    &nbsp;
+    &nbsp;
+
+    <p><center><button class="button" onclick="window.location.href = 
+'https://0xilis.github.io/p2/pastcuts.html';">Pastcuts</button></p>
+
+    <small>How to create Pastcuts</a></small>
+    <p><center><button class="button" onclick="window.location.href = 
+'https://0xilis.github.io/p2/libobjc.html';">Pastcuts</button></p>
+
+    <small>optimizing objc_msgSend</a></small>
+</body>
+</html>
